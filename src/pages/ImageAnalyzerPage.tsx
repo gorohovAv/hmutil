@@ -1,6 +1,4 @@
 import { useState, useRef, useCallback } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
-import { convertFileSrc } from "@tauri-apps/api/core";
 
 interface ImageData {
   id: string;
@@ -8,13 +6,15 @@ interface ImageData {
   src: string;
   width: number;
   height: number;
+  error?: string;
+  loading?: boolean;
 }
 
 interface PointData {
   id: string;
   x: number;
-  y: number; // От верхнего левого угла (для внутреннего использования)
-  yBottom: number; // От нижнего левого угла (для отображения)
+  y: number;
+  yBottom: number;
   whiteness: number;
   sourceImageId: string;
 }
@@ -26,50 +26,87 @@ export default function ImageAnalyzerPage() {
   const [fixedPoints, setFixedPoints] = useState<PointData[]>([]);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSelectImages = async () => {
-    const selected = await open({
-      multiple: true,
-      filters: [{ name: "PNG Images", extensions: ["png"] }],
-    });
+  const handleSelectImages = () => {
+    // Имитируем клик по скрытому input, что открывает системный диалог выбора файлов
+    fileInputRef.current?.click();
+  };
 
-    if (!selected || !Array.isArray(selected)) return;
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    // Ограничение: всего не более 3 картинок
     const availableSlots = 3 - images.length;
     if (availableSlots <= 0) {
       alert("Можно загрузить максимум 3 картинки. Удалите старые, чтобы добавить новые.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
-    const filesToAdd = selected.slice(0, availableSlots);
+    const filesToAdd = Array.from(files).slice(0, availableSlots);
     
     const newImages: ImageData[] = await Promise.all(
-      filesToAdd.map(async (filePath, index) => {
-        const fileName = filePath.split(/[/\\]/).pop() || "unknown.png";
-        // Конвертируем путь к файлу в URL для Tauri
-        const fileSrc = convertFileSrc(filePath);
-        
-        return {
-          id: `img-${Date.now()}-${index}`,
-          name: fileName,
-          src: fileSrc,
-          width: 0,
-          height: 0,
-        };
+      filesToAdd.map(async (file, index) => {
+        try {
+          console.log(`Обработка файла: ${file.name}`);
+          
+          // Нативный браузерный способ чтения файла в ArrayBuffer
+          const arrayBuffer = await file.arrayBuffer();
+          const blob = new Blob([arrayBuffer], { type: file.type || "image/png" });
+          const blobUrl = URL.createObjectURL(blob);
+          
+          console.log(`Файл ${file.name} успешно преобразован в Blob URL`);
+          
+          return {
+            id: `img-${Date.now()}-${index}`,
+            name: file.name,
+            src: blobUrl,
+            width: 0,
+            height: 0,
+            loading: true,
+          };
+        } catch (error) {
+          console.error(`Ошибка чтения файла ${file.name}:`, error);
+          return {
+            id: `img-${Date.now()}-${index}`,
+            name: file.name,
+            src: "",
+            width: 0,
+            height: 0,
+            loading: false,
+            error: `Не удалось прочитать файл: ${error}`,
+          };
+        }
       })
     );
 
-    // Добавляем новые картинки к существующим
     setImages((prev) => [...prev, ...newImages]);
     setFixedPoints([]);
     setHoverPoint(null);
     setActiveImageId(null);
+    
+    // Сбрасываем значение input, чтобы можно было выбрать тот же файл повторно при необходимости
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleImageLoad = (id: string, width: number, height: number) => {
+    console.log(`Изображение ${id} загружено: ${width}x${height}`);
     setImages((prev) =>
-      prev.map((img) => (img.id === id ? { ...img, width, height } : img))
+      prev.map((img) =>
+        img.id === id ? { ...img, width, height, loading: false, error: undefined } : img
+      )
+    );
+  };
+
+  const handleImageError = (id: string, error: string) => {
+    console.error(`Ошибка загрузки изображения ${id}:`, error);
+    setImages((prev) =>
+      prev.map((img) =>
+        img.id === id ? { ...img, loading: false, error } : img
+      )
     );
   };
 
@@ -82,19 +119,15 @@ export default function ImageAnalyzerPage() {
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return 0;
 
-    // Рисуем изображение на канвасе для чтения пикселей
     ctx.drawImage(imgElement, 0, 0);
     
-    // Получаем данные пикселя
     const pixel = ctx.getImageData(x, y, 1, 1).data;
     const r = pixel[0];
     const g = pixel[1];
     const b = pixel[2];
 
-    // Формула белоты: среднее арифметическое RGB в процентах (0-100)
-    // Черный (0,0,0) = 0%, Белый (255,255,255) = 100%
     const whiteness = ((r + g + b) / (3 * 255)) * 100;
-    return Math.round(whiteness * 10) / 10; // Округление до 1 знака
+    return Math.round(whiteness * 10) / 10;
   };
 
   const handleMouseMove = useCallback(
@@ -103,7 +136,6 @@ export default function ImageAnalyzerPage() {
       const x = Math.floor(e.clientX - rect.left);
       const y = Math.floor(e.clientY - rect.top);
 
-      // Ограничиваем координаты пределами изображения
       if (x < 0 || x >= img.width || y < 0 || y >= img.height) {
         setHoverPoint(null);
         setActiveImageId(null);
@@ -147,6 +179,13 @@ export default function ImageAnalyzerPage() {
   };
 
   const clearAllImages = () => {
+    // Освобождаем blob URLs для предотвращения утечек памяти
+    images.forEach((img) => {
+      if (img.src.startsWith("blob:")) {
+        URL.revokeObjectURL(img.src);
+      }
+    });
+    
     setImages([]);
     setFixedPoints([]);
     setHoverPoint(null);
@@ -156,6 +195,16 @@ export default function ImageAnalyzerPage() {
   return (
     <div className="analyzer-container">
       <h1>Анализатор изображений</h1>
+      
+      {/* Скрытый input для выбора файлов */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        style={{ display: 'none' }} 
+        accept="image/png" 
+        multiple 
+        onChange={handleFileChange} 
+      />
       
       <div className="controls">
         <button onClick={handleSelectImages} disabled={images.length >= 3}>
@@ -175,35 +224,47 @@ export default function ImageAnalyzerPage() {
           <div className="images-row">
             {images.map((img) => (
               <div key={img.id} className="image-wrapper">
+                {img.loading && (
+                  <div className="loading-state">
+                    Загрузка...
+                  </div>
+                )}
+                
+                {img.error && (
+                  <div className="error-state">
+                    <div>Ошибка загрузки</div>
+                    <small>{img.name}</small>
+                  </div>
+                )}
+                
                 <img
                   data-id={img.id}
                   src={img.src}
                   alt={img.name}
                   onLoad={(e) => handleImageLoad(img.id, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
+                  onError={() => handleImageError(img.id, "Failed to load")}
                   onMouseMove={(e) => handleMouseMove(e, img)}
                   onMouseLeave={handleMouseLeave}
                   onClick={handleClick}
                   className="analyzer-image"
+                  style={{ display: img.loading || img.error ? 'none' : 'block' }}
                 />
                 
-                {/* Отображение точки наведения на текущем изображении */}
-                {hoverPoint && activeImageId === img.id && (
+                {!img.loading && !img.error && hoverPoint && activeImageId === img.id && (
                   <div
                     className="marker hover-marker"
                     style={{ left: hoverPoint.x, top: hoverPoint.y }}
                   />
                 )}
                 
-                {/* Отображение точки наведения на ДРУГИХ изображениях по тем же координатам */}
-                {hoverPoint && activeImageId !== img.id && (
+                {!img.loading && !img.error && hoverPoint && activeImageId !== img.id && (
                   <div
                     className="marker sync-marker"
                     style={{ left: hoverPoint.x, top: hoverPoint.y }}
                   />
                 )}
 
-                {/* Отображение зафиксированных точек на всех изображениях */}
-                {fixedPoints.map((point) => (
+                {!img.loading && !img.error && fixedPoints.map((point) => (
                   <div
                     key={point.id}
                     className="marker fixed-marker"
@@ -254,7 +315,6 @@ export default function ImageAnalyzerPage() {
         </>
       )}
 
-      {/* Скрытый канвас для вычислений */}
       <canvas ref={canvasRef} style={{ display: "none" }} />
     </div>
   );
