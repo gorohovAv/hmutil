@@ -12,6 +12,7 @@ interface ImageData {
 
 interface PointData {
   id: string;
+  name: string;
   x: number;
   y: number;
   yBottom: number;
@@ -29,7 +30,6 @@ export default function ImageAnalyzerPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSelectImages = () => {
-    // Имитируем клик по скрытому input, что открывает системный диалог выбора файлов
     fileInputRef.current?.click();
   };
 
@@ -51,7 +51,6 @@ export default function ImageAnalyzerPage() {
         try {
           console.log(`Обработка файла: ${file.name}`);
           
-          // Нативный браузерный способ чтения файла в ArrayBuffer
           const arrayBuffer = await file.arrayBuffer();
           const blob = new Blob([arrayBuffer], { type: file.type || "image/png" });
           const blobUrl = URL.createObjectURL(blob);
@@ -86,7 +85,6 @@ export default function ImageAnalyzerPage() {
     setHoverPoint(null);
     setActiveImageId(null);
     
-    // Сбрасываем значение input, чтобы можно было выбрать тот же файл повторно при необходимости
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -164,6 +162,7 @@ export default function ImageAnalyzerPage() {
 
     const newPoint: PointData = {
       id: `point-${Date.now()}`,
+      name: "",
       x: hoverPoint.x,
       y: hoverPoint.y,
       yBottom: activeImg.height - hoverPoint.y,
@@ -178,8 +177,35 @@ export default function ImageAnalyzerPage() {
     setFixedPoints((prev) => prev.filter((p) => p.id !== id));
   };
 
+  const updatePointName = (id: string, newName: string) => {
+    setFixedPoints((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, name: newName } : p))
+    );
+  };
+
+  const handleCopyToClipboard = async () => {
+    if (fixedPoints.length === 0) {
+      alert("Нет точек для копирования");
+      return;
+    }
+
+    const exportData = fixedPoints.map((point, index) => ({
+      id: index + 1,
+      name: point.name || "",
+      x: String(point.x),
+      y: String(point.y),
+    }));
+
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
+      alert("Данные успешно скопированы в буфер обмена!");
+    } catch (err) {
+      console.error("Ошибка копирования: ", err);
+      alert("Не удалось скопировать данные в буфер обмена.");
+    }
+  };
+
   const clearAllImages = () => {
-    // Освобождаем blob URLs для предотвращения утечек памяти
     images.forEach((img) => {
       if (img.src.startsWith("blob:")) {
         URL.revokeObjectURL(img.src);
@@ -196,7 +222,6 @@ export default function ImageAnalyzerPage() {
     <div className="analyzer-container">
       <h1>Анализатор изображений</h1>
       
-      {/* Скрытый input для выбора файлов */}
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -277,7 +302,26 @@ export default function ImageAnalyzerPage() {
           </div>
 
           <div className="cards-container">
-            <h3>Зафиксированные точки ({fixedPoints.length})</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ margin: 0 }}>Зафиксированные точки ({fixedPoints.length})</h3>
+              {fixedPoints.length > 0 && (
+                <button 
+                  onClick={handleCopyToClipboard}
+                  style={{ 
+                    padding: '8px 16px', 
+                    backgroundColor: '#2196f3', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '4px', 
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  Скопировать в буфер обмена
+                </button>
+              )}
+            </div>
+            
             {fixedPoints.length === 0 ? (
               <p className="empty-state">Кликните на изображение, чтобы зафиксировать точку</p>
             ) : (
@@ -293,6 +337,24 @@ export default function ImageAnalyzerPage() {
                         <button className="remove-btn" onClick={() => removePoint(point.id)}>×</button>
                       </div>
                       <div className="card-body">
+                        <div className="metric" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                          <span className="metric-label">Имя точки:</span>
+                          <input 
+                            type="text" 
+                            className="metric-input"
+                            value={point.name}
+                            onChange={(e) => updatePointName(point.id, e.target.value)}
+                            placeholder="Например: coal1"
+                            style={{ 
+                              width: '100%', 
+                              padding: '6px', 
+                              marginTop: '4px', 
+                              border: '1px solid #ccc', 
+                              borderRadius: '4px',
+                              fontSize: '14px'
+                            }}
+                          />
+                        </div>
                         <div className="metric">
                           <span className="metric-label">X:</span>
                           <span className="metric-value">{point.x} px</span>
