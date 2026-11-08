@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import "./ImageAnalyzerPage.css";
 
 interface ImageData {
   id: string;
@@ -25,7 +26,7 @@ export default function ImageAnalyzerPage() {
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
   const [activeImageId, setActiveImageId] = useState<string | null>(null);
   const [fixedPoints, setFixedPoints] = useState<PointData[]>([]);
-  
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,18 +46,18 @@ export default function ImageAnalyzerPage() {
     }
 
     const filesToAdd = Array.from(files).slice(0, availableSlots);
-    
+
     const newImages: ImageData[] = await Promise.all(
       filesToAdd.map(async (file, index) => {
         try {
           console.log(`Обработка файла: ${file.name}`);
-          
+
           const arrayBuffer = await file.arrayBuffer();
           const blob = new Blob([arrayBuffer], { type: file.type || "image/png" });
           const blobUrl = URL.createObjectURL(blob);
-          
+
           console.log(`Файл ${file.name} успешно преобразован в Blob URL`);
-          
+
           return {
             id: `img-${Date.now()}-${index}`,
             name: file.name,
@@ -84,7 +85,7 @@ export default function ImageAnalyzerPage() {
     setFixedPoints([]);
     setHoverPoint(null);
     setActiveImageId(null);
-    
+
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -118,7 +119,7 @@ export default function ImageAnalyzerPage() {
     if (!ctx) return 0;
 
     ctx.drawImage(imgElement, 0, 0);
-    
+
     const pixel = ctx.getImageData(x, y, 1, 1).data;
     const r = pixel[0];
     const g = pixel[1];
@@ -211,7 +212,7 @@ export default function ImageAnalyzerPage() {
         URL.revokeObjectURL(img.src);
       }
     });
-    
+
     setImages([]);
     setFixedPoints([]);
     setHoverPoint(null);
@@ -220,25 +221,25 @@ export default function ImageAnalyzerPage() {
 
   return (
     <div className="analyzer-container">
-      <h1>Анализатор изображений</h1>
-      
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        style={{ display: 'none' }} 
-        accept="image/png" 
-        multiple 
-        onChange={handleFileChange} 
+      <h1 className="page-heading">Анализатор изображений</h1>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: "none" }}
+        accept="image/png"
+        multiple
+        onChange={handleFileChange}
       />
-      
+
       <div className="controls">
         <button onClick={handleSelectImages} disabled={images.length >= 3}>
-          {images.length === 0 
-            ? "Выбрать PNG картинки (макс. 3)" 
+          {images.length === 0
+            ? "Выбрать PNG картинки (макс. 3)"
             : `Добавить ещё (${3 - images.length} осталось)`}
         </button>
         {images.length > 0 && (
-          <button onClick={clearAllImages} style={{ marginLeft: '10px', backgroundColor: '#ffebee', color: '#c62828' }}>
+          <button className="danger-outline" onClick={clearAllImages}>
             Очистить всё
           </button>
         )}
@@ -249,39 +250,37 @@ export default function ImageAnalyzerPage() {
           <div className="images-row">
             {images.map((img) => (
               <div key={img.id} className="image-wrapper">
-                {img.loading && (
-                  <div className="loading-state">
-                    Загрузка...
-                  </div>
-                )}
-                
+                {img.loading && <div className="loading-state">Загрузка...</div>}
+
                 {img.error && (
                   <div className="error-state">
                     <div>Ошибка загрузки</div>
                     <small>{img.name}</small>
                   </div>
                 )}
-                
+
                 <img
                   data-id={img.id}
                   src={img.src}
                   alt={img.name}
-                  onLoad={(e) => handleImageLoad(img.id, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
+                  onLoad={(e) =>
+                    handleImageLoad(img.id, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)
+                  }
                   onError={() => handleImageError(img.id, "Failed to load")}
                   onMouseMove={(e) => handleMouseMove(e, img)}
                   onMouseLeave={handleMouseLeave}
                   onClick={handleClick}
                   className="analyzer-image"
-                  style={{ display: img.loading || img.error ? 'none' : 'block' }}
+                  style={{ display: img.loading || img.error ? "none" : "block" }}
                 />
-                
+
                 {!img.loading && !img.error && hoverPoint && activeImageId === img.id && (
                   <div
                     className="marker hover-marker"
                     style={{ left: hoverPoint.x, top: hoverPoint.y }}
                   />
                 )}
-                
+
                 {!img.loading && !img.error && hoverPoint && activeImageId !== img.id && (
                   <div
                     className="marker sync-marker"
@@ -289,39 +288,32 @@ export default function ImageAnalyzerPage() {
                   />
                 )}
 
-                {!img.loading && !img.error && fixedPoints.map((point) => (
-                  <div
-                    key={point.id}
-                    className="marker fixed-marker"
-                    style={{ left: point.x, top: point.y }}
-                    title={`X: ${point.x}, Y(низ): ${point.yBottom}, Белота: ${point.whiteness}%`}
-                  />
-                ))}
+                {!img.loading &&
+                  !img.error &&
+                  fixedPoints.map((point) => (
+                    <div
+                      key={point.id}
+                      className="marker fixed-marker"
+                      style={{ left: point.x, top: point.y }}
+                      title={`X: ${point.x}, Y(низ): ${point.yBottom}, Белота: ${point.whiteness}%`}
+                    />
+                  ))}
               </div>
             ))}
           </div>
 
           <div className="cards-container">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h3 style={{ margin: 0 }}>Зафиксированные точки ({fixedPoints.length})</h3>
+            <div className="flex-between mb-0" style={{ marginBottom: "var(--spacing-lg)" }}>
+              <h3 className="mb-0" style={{ borderBottom: "none", paddingBottom: 0, marginBottom: 0 }}>
+                Зафиксированные точки ({fixedPoints.length})
+              </h3>
               {fixedPoints.length > 0 && (
-                <button 
-                  onClick={handleCopyToClipboard}
-                  style={{ 
-                    padding: '8px 16px', 
-                    backgroundColor: '#2196f3', 
-                    color: 'white', 
-                    border: 'none', 
-                    borderRadius: '4px', 
-                    cursor: 'pointer',
-                    fontWeight: 'bold'
-                  }}
-                >
+                <button className="success sm" onClick={handleCopyToClipboard}>
                   Скопировать в буфер обмена
                 </button>
               )}
             </div>
-            
+
             {fixedPoints.length === 0 ? (
               <p className="empty-state">Кликните на изображение, чтобы зафиксировать точку</p>
             ) : (
@@ -334,25 +326,19 @@ export default function ImageAnalyzerPage() {
                         <span className="card-title" title={sourceImg?.name || "Unknown"}>
                           {sourceImg?.name || "Unknown"}
                         </span>
-                        <button className="remove-btn" onClick={() => removePoint(point.id)}>×</button>
+                        <button className="remove-btn" onClick={() => removePoint(point.id)}>
+                          ×
+                        </button>
                       </div>
                       <div className="card-body">
-                        <div className="metric" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                        <div className="metric-name-row">
                           <span className="metric-label">Имя точки:</span>
-                          <input 
-                            type="text" 
+                          <input
+                            type="text"
                             className="metric-input"
                             value={point.name}
                             onChange={(e) => updatePointName(point.id, e.target.value)}
                             placeholder="Например: coal1"
-                            style={{ 
-                              width: '100%', 
-                              padding: '6px', 
-                              marginTop: '4px', 
-                              border: '1px solid #ccc', 
-                              borderRadius: '4px',
-                              fontSize: '14px'
-                            }}
                           />
                         </div>
                         <div className="metric">
